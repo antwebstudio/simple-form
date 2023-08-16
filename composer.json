@@ -1,0 +1,24 @@
+{
+    "name": "antweb/simple-form",
+    "type": "library",
+    "autoload": {
+        "psr-4": {
+            "Antweb\\SmallForm\\": "src/"
+        },
+        "files": [
+            "common.php"
+        ]
+    },
+    "authors": [
+        {
+            "name": "Hui Yang",
+            "email": "chy1988@antwebstudio.com"
+        }
+    ],
+    "require": {
+        "illuminate/database": "^8.83",
+        "symfony/mailer": "^5.4",
+        "symfony/google-mailer": "^5.4",
+        "illuminate/validation": "^8.83"
+    }
+}
