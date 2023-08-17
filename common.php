@@ -14,6 +14,49 @@ if (!file_exists(dirname(dirname(__DIR__)).'/.htaccess')) {
     file_put_contents(dirname(dirname(__DIR__)).'/.htaccess', "Order allow,deny\nDeny from all");
 }
 
+function runInConsole() {
+    return PHP_SAPI === 'cli';
+}
+
+function debugMode() {
+    ini_set('display_errors', 1);
+    ini_set('display_startup_errors', 1);
+    error_reporting(E_ALL);
+}
+
+function validateRecaptcha($value) {
+    $recaptchaClass = '';
+
+    switch (config('recaptcha.version')) {
+        case 'v3':
+            $recaptchaClass = \Biscolab\ReCaptcha\ReCaptchaBuilderV3::class;
+            break;
+        case 'v2':
+            $recaptchaClass = \Biscolab\ReCaptcha\ReCaptchaBuilderV2::class;
+            break;
+        case 'invisible':
+            $recaptchaClass = \Biscolab\ReCaptcha\ReCaptchaBuilderInvisible::class;
+            break;
+    }
+
+    $recaptchaValidator = new $recaptchaClass(config('recaptcha.api_site_key'), config('recaptcha.api_secret_key'));
+
+    return $recaptchaValidator->validate($value);
+}
+
+function request() {
+    return new MockedRequest;
+}
+
+function renderView($view, $data) {
+    $html = '';
+    foreach ($data as $key => $value) {
+        $label = mb_convert_case($key, MB_CASE_TITLE, 'UTF-8');
+        $html .= '<b>'.$label.'</b>: '.$value.'<br/>';
+    }
+    return $html;
+}
+
 function composeMail() {
     $email = (new Email())
         ->from(config('mail.from', config('mail.username')))
@@ -77,6 +120,23 @@ class FormResponse extends Model
 {
     protected $guarded = [];
     protected $casts = ['data' => 'array'];
+}
+
+class MockedRequest {
+    public function ip() {
+        if (!empty($_SERVER['HTTP_CLIENT_IP'] ?? '')) {
+            $ip = $_SERVER['HTTP_CLIENT_IP'];
+        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '')) {
+            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+        } else {
+            $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+        }
+        return $ip;
+    }
+    
+    public function getClientIp() {
+        return $this->ip();
+    }
 }
 
 class Validator
