@@ -1,5 +1,7 @@
 <?php
 
+// You may either copy this page or just require it.
+
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 
@@ -19,7 +21,7 @@ if (isset($_POST['username']) && isset($_POST['password'])) {
 
 $logged = session()->get('username');
 if ($logged) {
-    $responses = FormResponse::paginate(25);
+    $responses = FormResponse::latest('created_at')->paginate(25);
 
     $columns = [];
     if ($responses->isNotEmpty()) {
@@ -32,6 +34,7 @@ if ($logged) {
     }
     $columns = array_merge([
         'id',
+        'created_at',
     ], $columns, [
 
     ]);
