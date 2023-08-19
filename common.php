@@ -10,18 +10,28 @@ use Symfony\Component\Mailer\Transport;
 use Symfony\Component\Mailer\Mailer;
 use Symfony\Component\Mime\Email;
 
-if (!file_exists(dirname(dirname(__DIR__)).'/.htaccess')) {
-    file_put_contents(dirname(dirname(__DIR__)).'/.htaccess', "Order allow,deny\nDeny from all");
-}
 
-function runInConsole() {
-    return PHP_SAPI === 'cli';
+function config($name, $default = null) {
+    $config = require dirname(dirname(dirname(__DIR__))).'/config.php';
+    return Arr::get($config, $name, $default);
 }
 
 function debugMode() {
     ini_set('display_errors', 1);
     ini_set('display_startup_errors', 1);
     error_reporting(E_ALL);
+}
+
+if (config('app.debug', false)) {
+    debugMode();
+}
+
+if (!file_exists(dirname(dirname(__DIR__)).'/.htaccess')) {
+    file_put_contents(dirname(dirname(__DIR__)).'/.htaccess', "Order allow,deny\nDeny from all");
+}
+
+function runInConsole() {
+    return PHP_SAPI === 'cli';
 }
 
 function validateRecaptcha($value) {
@@ -51,7 +61,7 @@ function request() {
 function renderView($view, $data) {
     $html = '';
     foreach ($data as $key => $value) {
-        $label = mb_convert_case($key, MB_CASE_TITLE, 'UTF-8');
+        $label = str_replace('_', ' ', mb_convert_case($key, MB_CASE_TITLE, 'UTF-8'));
         $html .= '<b>'.$label.'</b>: '.$value.'<br/>';
     }
     return $html;
@@ -81,11 +91,6 @@ function sendMail($email) {
     $mailer = new Mailer($transport);
 
     $mailer->send($email);
-}
-
-function config($name, $default = null) {
-    $config = require dirname(dirname(dirname(__DIR__))).'/config.php';
-    return Arr::get($config, $name, $default);
 }
 
 if (config('db.enabled', true)) {
