@@ -1,20 +1,70 @@
 <?php
-use Illuminate\Database\Capsule\Manager as Capsule;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
+use Maatwebsite\Excel\Reader;
+use Maatwebsite\Excel\Writer;
+use Maatwebsite\Excel\Exporter;
+use Illuminate\Events\Dispatcher;
+use Symfony\Component\Mime\Email;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Factory;
+use Illuminate\Container\Container;
+use Maatwebsite\Excel\QueuedWriter;
+use Symfony\Component\Mailer\Mailer;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Translation\FileLoader;
 use Illuminate\Translation\Translator;
+use Illuminate\Database\Eloquent\Model;
 use Symfony\Component\Mailer\Transport;
-use Symfony\Component\Mailer\Mailer;
-use Symfony\Component\Mime\Email;
+use Maatwebsite\Excel\DefaultValueBinder;
 use Illuminate\Session\FileSessionHandler;
-use Illuminate\Support\Collection;
+use Maatwebsite\Excel\Concerns\WithMapping;
+use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Files\TemporaryFileFactory;
+use Illuminate\Database\Capsule\Manager as Capsule;
+use Maatwebsite\Excel\Transactions\TransactionHandler;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Maatwebsite\Excel\Files\Filesystem as MaatFileSystem;
+use Maatwebsite\Excel\Transactions\NullTransactionHandler;
 
 function config($name, $default = null) {
     $config = require dirname(dirname(dirname(__DIR__))).'/config.php';
     return Arr::get($config, $name, $default);
+}
+
+function storage_path($path) {
+    return dirname(dirname(dirname(__DIR__))).'/'.ltrim($path, '/\\');
+}
+
+function app($class) {
+    $temporaryFileFactory = new TemporaryFileFactory(
+        config('excel.temporary_files.local_path', config('excel.exports.temp_path', storage_path('laravel-excel'))),
+        config('excel.temporary_files.remote_disk')
+    );
+    switch($class) {
+        case DefaultValueBinder::class:
+            return new DefaultValueBinder;
+        case MaatFileSystem::class:
+            return new MaatFileSystem(new \Illuminate\Filesystem\FilesystemManager(null));
+        case Writer::class:
+            return new \Maatwebsite\Excel\Writer($temporaryFileFactory);
+        case Reader::class:
+            return new Reader($temporaryFileFactory, app(TransactionHandler::class));
+        case TransactionHandler::class:
+            return new NullTransactionHandler;
+        case QueuedWriter::class:
+            return new QueuedWriter(app(Writer::class), $temporaryFileFactory);
+        case TemporaryFileFactory::class:
+            return $temporaryFileFactory;
+        case Exporter::class:
+            return new \Maatwebsite\Excel\Excel(
+                app(Writer::class),
+                app(QueuedWriter::class),
+                app(Reader::class),
+                app(MaatFileSystem::class)
+            );
+    }
 }
 
 function debugMode() {
@@ -61,6 +111,10 @@ function session($data = null) {
 
         return $session;
     }
+}
+
+function response() {
+    return new ApplicationResponse;
 }
 
 function resetAdmin($username, $password) {
@@ -197,6 +251,11 @@ function sendMail($email) {
     $mailer->send($email);
 }
 
+function exportExcel() {
+    $response = (new FormResponsesExport)->download('responses.xlsx', \Maatwebsite\Excel\Excel::XLSX);
+    return $response->send();
+}
+
 if (config('db.enabled', true)) {
     $capsule = new Capsule;
     $capsule->addConnection(config('db'));
@@ -216,19 +275,6 @@ if (config('db.enabled', true)) {
     return $_GET[$pageName] ?? 1;
 });
 
-/** 
-// Set the event dispatcher used by Eloquent models... (optional)
-use Illuminate\Events\Dispatcher;
-use Illuminate\Container\Container;
-$capsule->setEventDispatcher(new Dispatcher(new Container));
-
-// Make this Capsule instance available globally via static methods... (optional)
-$capsule->setAsGlobal();
-
-// Setup the Eloquent ORM... (optional; unless you've used setEventDispatcher())
-$capsule->bootEloquent();
-*/
-
 class Session
 {
     public static $manager;
@@ -238,6 +284,25 @@ class FormResponse extends Model
 {
     protected $guarded = [];
     protected $casts = ['data' => 'array'];
+}
+
+class ApplicationResponse
+{
+    public function download($file, $name = null, array $headers = [], $disposition = 'attachment') {
+        
+        $response = new BinaryFileResponse($file, 200, $headers, true, $disposition);
+
+        if (! is_null($name)) {
+            return $response->setContentDisposition($disposition, $name, $this->fallbackName($name));
+        }
+
+        return $response;
+    }
+    
+    protected function fallbackName($name)
+    {
+        return str_replace('%', '', Str::ascii($name));
+    }
 }
 
 class MockedRequest {
@@ -322,5 +387,55 @@ class Validator
     public function __call($method, $args)
     {
         return call_user_func_array([$this->factory, $method], $args);
+    }
+}
+
+class FormResponsesExport implements FromCollection, WithMapping, WithHeadings
+{
+    use \Maatwebsite\Excel\Concerns\Exportable;
+
+    protected $columns;
+
+    public function __construct() {
+        $this->columns = $this->getColumnsForResponse(FormResponse::first());
+    }
+
+    public function collection()
+    {
+        return FormResponse::all();
+    }
+
+    public function headings(): array
+    {
+        $return = [];
+        foreach ($this->columns as $column) {
+            $return[] = Str::title(Str::after($column, '.'));
+        }
+        return $return;
+    }
+    
+    public function map($response): array
+    {
+        $return = [];
+        foreach ($this->columns as $column) {
+            $return[] = Arr::get($response, $column, '');
+        }
+        return $return;
+    }
+
+    protected function getColumnsForResponse($response) {
+        $columns = config('responses.columns', null);
+        if (!isset($columns)) {
+            $columns = collect($response->data)->map(function($value, $key) {
+                return 'data.'.$key;
+            })->toArray();
+        }
+        $columns = array_merge([
+            'id',
+            'created_at',
+        ], $columns, [
+        ]);
+
+        return $columns;
     }
 }

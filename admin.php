@@ -17,6 +17,9 @@ if (isset($_POST['username']) && isset($_POST['password'])) {
 } else if (isset($_POST['logout'])) {
     logout();
     reload();
+} else if (isset($_POST['export'])) {
+    exportExcel();
+    reload();
 }
 
 $logged = session()->get('username');
@@ -50,6 +53,7 @@ if ($logged) {
     </head>
     <body class="bg-gray-100 p-8">
         <form method="post"><input type="hidden" name="logout" /><button>Logout</button></form>
+        <form method="post"><input type="hidden" name="export" /><button>Export to Excel</button></form>
         
         <div class="bg-white rounded shadow overflow-x-auto">
             <table class="min-w-full">
