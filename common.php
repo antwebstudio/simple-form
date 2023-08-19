@@ -9,7 +9,8 @@ use Illuminate\Translation\Translator;
 use Symfony\Component\Mailer\Transport;
 use Symfony\Component\Mailer\Mailer;
 use Symfony\Component\Mime\Email;
-
+use Illuminate\Session\FileSessionHandler;
+use Illuminate\Support\Collection;
 
 function config($name, $default = null) {
     $config = require dirname(dirname(dirname(__DIR__))).'/config.php';
@@ -28,6 +29,57 @@ if (config('app.debug', false)) {
 
 if (!file_exists(dirname(dirname(__DIR__)).'/.htaccess')) {
     file_put_contents(dirname(dirname(__DIR__)).'/.htaccess', "Order allow,deny\nDeny from all");
+}
+
+function session($data = null) {
+    if (isset($data) && is_array($data)) {
+        foreach ($data as $key => $value) {
+            session()->put($key, $value);
+        }
+        session()->save();
+    } else {
+        $session = Session::$manager;
+
+        if (isset($session)) return $session;
+        
+        // if (!isset($_GLOBAL['session'])) {
+            $sessionPath = ltrim(config('session.path', 'session'), '\/\\');
+            $sessionPath = dirname(dirname(dirname(__DIR__))).'/'.$sessionPath;
+            
+            $session = new \Illuminate\Session\Store('session', new FileSessionHandler(new Filesystem(), $sessionPath, 60), $_COOKIE['session_id'] ?? null);
+            $session->start();
+            // $session->put('test', 'abc');
+            // $session->save();
+            setcookie('session_id', $session->getId());
+
+        //     $_GLOBAL['session'] = $session;
+        // }
+
+        // return $_GLOBAL['session'];
+
+        Session::$manager = $session;
+
+        return $session;
+    }
+}
+
+function resetAdmin($username, $password) {
+    $hashed = password_hash($password, PASSWORD_BCRYPT);
+    throw new \Exception('Not yet implemented');
+}
+
+function logout() {
+    session()->forget('username');
+    session()->flush();
+    session()->save();
+}
+
+function loginAsAdmin($username, $password) {
+    if ($username == config('admin.username') && password_verify($password, config('admin.password'))) {
+        session(['username' => $username]);
+        return true;
+    }
+    return false;
 }
 
 function runInConsole() {
@@ -54,8 +106,31 @@ function validateRecaptcha($value) {
     return $recaptchaValidator->validate($value);
 }
 
+function reload() {
+    return redirect($_SERVER['PHP_SELF']);
+}
+
+function redirect($path) {
+    return header('Location: '.$path);
+}
+
 function request() {
     return new MockedRequest;
+}
+
+function renderPaginator($paginator, $next = 'Next', $prev = 'Prev') {
+    $parsedUrl = parse_url($_SERVER['REQUEST_URI']);
+    $path = basename($parsedUrl['path']);
+
+    $elements = [];
+
+    ob_start();
+
+    require __DIR__.'/pagination.php';
+
+    $htmlContent = ob_get_clean();
+
+    return $htmlContent;
 }
 
 function renderView($view, $data) {
@@ -65,6 +140,35 @@ function renderView($view, $data) {
         $html .= '<b>'.$label.'</b>: '.$value.'<br/>';
     }
     return $html;
+}
+
+function currentUrl() {
+    $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'];
+    $parsedUrl = parse_url($_SERVER['REQUEST_URI']);
+    $path = $parsedUrl['path'];
+    return $protocol . '://' . $host . $path;
+}
+
+function url($relativeUrl) {
+    $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+    
+    // Get the current domain
+    $domain = $_SERVER['HTTP_HOST'];
+    
+    // Get the current path
+    $path = rtrim(dirname($_SERVER['PHP_SELF']), '/');
+    
+    // Combine protocol, domain, and path to create the base URL
+    $baseUrl = "$protocol://$domain$path";
+    
+    // If the relative URL starts with a slash, remove it
+    $relativeUrl = ltrim($relativeUrl, '/');
+    
+    // Combine the base URL and relative URL to create the absolute URL
+    $absoluteUrl = $baseUrl . '/' . $relativeUrl;
+    
+    return $absoluteUrl;
 }
 
 function composeMail() {
@@ -108,6 +212,10 @@ if (config('db.enabled', true)) {
     }
 }
 
+\Illuminate\Pagination\LengthAwarePaginator::currentPageResolver(function($pageName) {
+    return $_GET[$pageName] ?? 1;
+});
+
 /** 
 // Set the event dispatcher used by Eloquent models... (optional)
 use Illuminate\Events\Dispatcher;
@@ -120,6 +228,11 @@ $capsule->setAsGlobal();
 // Setup the Eloquent ORM... (optional; unless you've used setEventDispatcher())
 $capsule->bootEloquent();
 */
+
+class Session
+{
+    public static $manager;
+}
 
 class FormResponse extends Model
 {
