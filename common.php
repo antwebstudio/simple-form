@@ -1,6 +1,7 @@
 <?php
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use Illuminate\Http\Request;
 use Maatwebsite\Excel\Reader;
 use Maatwebsite\Excel\Writer;
 use Maatwebsite\Excel\Exporter;
@@ -291,6 +292,7 @@ class ApplicationResponse
     public function download($file, $name = null, array $headers = [], $disposition = 'attachment') {
         
         $response = new BinaryFileResponse($file, 200, $headers, true, $disposition);
+        $response->prepare(Request::capture());
 
         if (! is_null($name)) {
             return $response->setContentDisposition($disposition, $name, $this->fallbackName($name));
